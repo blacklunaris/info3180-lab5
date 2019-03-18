@@ -4,12 +4,16 @@ Jinja2 Documentation:    http://jinja.pocoo.org/2/documentation/
 Werkzeug Documentation:  http://werkzeug.pocoo.org/documentation/
 This file creates your application.
 """
-
-from app import app, db, login_manager
-from flask import render_template, request, redirect, url_for, flash
+import os
+from app import app
+from app import db
+from flask import render_template, request, redirect, url_for, flash, session, abort, jsonify
 from flask_login import login_user, logout_user, current_user, login_required
-from app.forms import LoginForm
-from app.models import UserProfile
+from models import UserProfile
+from werkzeug.utils import secure_filename
+import time
+import uuid
+
 
 
 ###
@@ -25,42 +29,77 @@ def home():
 @app.route('/about/')
 def about():
     """Render the website's about page."""
-    return render_template('about.html')
+    return render_template('about.html', name="Mary Jane")
+    
+@app.route('/profile', methods=['POST','GET'])
+def profile():
+    """Creates new profile"""
+    
+    if request.method == 'POST':
+        uid = str(uuid.uuid4().fields[-1])[:8]
+        time_created = time.strftime('%Y/%b/%d')
+        fname = request.form['first_name']
+        lname = request.form['last_name']
+        uname = request.form['user_name']
+        email = request.form['email']
+        location = request.form['location']
+        biography =request.form['bio']
+        sex =request.form['gender']
+        
+        
+        profilepic = request.files['file']
+        if profilepic:
+            uploadfolder = app.config['UPLOAD_FOLDER']
+            filename = secure_filename(profilepic.filename)
+            profilepic.save(os.path.join(uploadfolder, filename))
+            
+        user = UserProfile(id= uid, first_name=fname, last_name=lname, username=uname, age = age, gender=sex, bio=biography, created = time_created, pic=profilepic.filename)
+        db.session.add(user)
+        db.session.commit()
+        flash('New User was successfully added')
+        return redirect(url_for('home'))
+    return render_template('Profile.html')
 
 
-@app.route("/login", methods=["GET", "POST"])
-def login():
-    form = LoginForm()
-    if request.method == "POST":
-        # change this to actually validate the entire form submission
-        # and not just one field
-        if form.username.data:
-            # Get the username and password values from the form.
-
-            # using your model, query database for a user based on the username
-            # and password submitted. Remember you need to compare the password hash.
-            # You will need to import the appropriate function to do so.
-            # Then store the result of that query to a `user` variable so it can be
-            # passed to the login_user() method below.
-
-            # get user id, load into session
-            login_user(user)
-
-            # remember to flash a message to the user
-            return redirect(url_for("home"))  # they should be redirected to a secure-page route instead
-    return render_template("login.html", form=form)
 
 
-# user_loader callback. This callback is used to reload the user object from
-# the user ID stored in the session
-@login_manager.user_loader
-def load_user(id):
-    return UserProfile.query.get(int(id))
+########################################################################################
 
+
+
+@app.route('/profiles', methods=['GET','POST'])
+def profiles():
+    profile_list=[]
+    
+    profiles= UserProfile.query.filter_by().all()
+    
+    if request.method == 'POST':
+        for profile in profiles:
+            profile_list +=[{'username':profile.username, 'userID':profile.id}]
+        return jsonify(users=profile_list)
+    elif request.method == 'GET':
+        return render_template('profiles.html', profile=profiles)
+    return redirect(url_for('home'))
+
+
+#######################################################################################
+
+
+@app.route('/profile/<userid>', methods=['GET', 'POST'])
+def userprofile(userid):
+    json={}
+    user = UserProfile.query.filter_by(id=userid).first()
+    if request.method == 'POST':
+        json={'userid':user.id, 'username':user.username, 'profile_image':user.pic, 'gender':user.gender, 'age':user.age, 'created_on':user.created}
+        return jsonify(json)
+
+    elif request.method == 'GET' and user:
+        return render_template('individual.html', profile=user)
+
+    return render_template('profile.html')
 ###
 # The functions below should be applicable to all Flask apps.
 ###
-
 
 @app.route('/<file_name>.txt')
 def send_text_file(file_name):
@@ -87,4 +126,4 @@ def page_not_found(error):
 
 
 if __name__ == '__main__':
-    app.run(debug=True, host="0.0.0.0", port="8080")
+    app.run(debug=True,host="0.0.0.0",port="8080")
